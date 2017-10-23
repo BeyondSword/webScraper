@@ -17,6 +17,3 @@ class ScrapeCallback:
 			for field in self.fields:
 				row.append(tree.cssselect('table > tr#places_{}__row > td.w2p_fw'.format(field))[0].text_content())
 			self.writer.writerow(row)
-
-def test():
-	print 'parser'

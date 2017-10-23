@@ -6,10 +6,8 @@ import datetime
 import time
 import sys
 import random
-
-#sys.path.append('D:\Python27\spider')
-import html_parser
 from html_parser import ScrapeCallback
+from db_cache import MongoCache
 
 class downloader:
 	def __init__(self, cache=None, delay=1,
@@ -26,33 +24,37 @@ class downloader:
 		if self.cache:
 			try:
 				result = self.cache[url]
-				except KeyError:
-					# url is not available in cache
-					pass
-				else:
-					if self.num_retries > 0 and \
-						500 <= result['code'] < 600:
-						#server error so ignore result from cache
-						#and re-download
-						result = None
+			except KeyError:
+				# url is not available in cache
+				pass
+			else:
+				if self.num_retries > 0 and \
+					500 <= result['code'] < 600:
+					#server error so ignore result from cache
+					#and re-download
+					result = None
 		if result is None:
-			#result was not loaded from cache
+			#result loaded failed from cache
 			#so still need to download
 			self.throttle.wait(url)
-			proxy = random.choice(self.proxies) if self.proxies
-				else None
+			if self.proxies:
+				proxy = random.choice(self.proxies)
+			else: 
+				proxy = None
 			headers = {'User-agent': self.user_agent}
 			result = self.download(url, headers, proxy, self.num_retries)
 			if self.cache:
 				# save result tp cache
 				self.cache[url] = result
+		print 'result', result
 		return result['html']
 		
 	#from parser import ScrapeCallback
 	#modified to support proxy
-	def download(url, headers, proxy, num_retries):
+	def download(self, url, headers, proxy, num_retries):
 		print 'Downloading:', url
-		request = urllib2.Request(url, headers)
+		rq_body = ''
+		request = urllib2.Request(url, rq_body, headers)
 		#request = urllib2.Request(url)		
 		opener = urllib2.build_opener()
 		if proxy:
@@ -61,13 +63,13 @@ class downloader:
 		try:
 			html = opener.open(request).read()
 		except urllib2.URLError as e:
-			print e.code
 			print 'Download error:', e.reason
 			html = None
 			if num_retries > 0:
 				if hasattr(e, 'code') and 500 <= e.code < 600:
 					#recursively  retry 5xx HTTP errors
 					return download(url, num_retries-1)
+		print html
 		return html
 	
 def download_test():
@@ -81,23 +83,27 @@ def download_test():
 def get_links(html):
 	#retur a list of links from html
 	#a regular expression to extract all links from the webpage
+	print html
 	webpage_regex = re.compile('<a[^>]+href=["\'](.*?)["\']', re.IGNORECASE)
 	#return a list include all links from the webpage
 	return webpage_regex.findall(html)
-def link_crawler(seed_url, delay=1, link_regex=None, proxy=None, max_depth=2, user_agent='wswp', num_retries=2, scrape_callback= ScrapeCallback()):
+def link_crawler(seed_url, delay=1, link_regex=None, proxies=None, max_depth=2, user_agent='wswp', num_retries=2, scrape_callback= ScrapeCallback(),
+				cache = None):
 	crawl_queue = [seed_url]
 	seen = {seed_url:0}
 	rp = robotparser.RobotFileParser()
-	
+	#initialize downloader
+	cache = MongoCache()
+	D = downloader(cache=cache)
+
 	while crawl_queue:
 		url = crawl_queue.pop()
 		#detect whether this url is baned
 		#if rp.can_fetch(user_agent, url):
-		throttle.wait(url)
 		depth = seen[url]
 		if depth != max_depth:
-			html = download(url, user_agent=user_agent,num_retries=num_retries)
-			#html parser
+			html = D(url)
+			#html parser and convert to csv
 			if scrape_callback:
 				scrape_callback(url, html)
 			for link in get_links(html):
@@ -126,9 +132,12 @@ class Throttle:
 				#so need to sleep
 				time.sleep(sleep_secs)
 		self.domains[domain] = datetime.datetime.now()
-
-if __name__ == '__main__':
-	html_parser.test()
+#
+#test
+#
+def main():
+	print datetime.datetime.now()
 	link_crawler('http://example.webscraping.com', link_regex='/(view|index)')
-	#input("Prease <enter>")
-	#download('http://example.webscraping.com')
+	print datetime.datetime.now()
+if __name__ == '__main__':
+	main()
